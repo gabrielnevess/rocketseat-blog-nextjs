@@ -7,6 +7,9 @@ import Prismic from '@prismicio/client';
 
 import { RichText } from 'prismic-dom';
 import { useRouter } from 'next/router';
+import Link from 'next/link';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { getPrismicClient } from '../../services/prismic';
 
 import commonStyles from '../../styles/common.module.scss';
@@ -14,13 +17,14 @@ import styles from './post.module.scss';
 
 import Header from '../../components/Header';
 
-import { formatDate } from '../../utils';
+import UtterancesComments from '../../components/Utteranc';
 
 interface Post {
+  id: string;
   first_publication_date: string | null;
+  last_publication_date: string | null;
   data: {
     title: string;
-    subtitle: string;
     banner: {
       url: string;
     };
@@ -32,13 +36,22 @@ interface Post {
       }[];
     }[];
   };
+  uid: string;
 }
 
 interface PostProps {
   post: Post;
+  previousPost: Post;
+  nextPost: Post;
+  preview: boolean;
 }
 
-export default function Post({ post }: PostProps) {
+export default function Post({
+  post,
+  previousPost,
+  nextPost,
+  preview,
+}: PostProps) {
   const router = useRouter();
 
   if (router.isFallback) {
@@ -61,6 +74,21 @@ export default function Post({ post }: PostProps) {
 
   const timeEstimmed = Math.ceil(totalWords / 200);
 
+  function dateFormat(date: string) {
+    const formatedDate = format(new Date(date), 'dd MMM yyyy', {
+      locale: ptBR,
+    });
+
+    return formatedDate;
+  }
+
+  function getUpdatedAt(date: string) {
+    const time = date.split(/[\sT+:]+/);
+    const formatedTime = `${time[1]}:${time[2]}`;
+
+    return formatedTime;
+  }
+
   return (
     <>
       <Head>
@@ -76,7 +104,10 @@ export default function Post({ post }: PostProps) {
           <div className={commonStyles.info}>
             <time>
               <FiCalendar />
-              {formatDate(post.first_publication_date)}
+              <>
+                * editado em {dateFormat(post.last_publication_date)}, às{' '}
+                {getUpdatedAt(post.last_publication_date)}
+              </>
             </time>
             <span>
               <FiUser />
@@ -100,6 +131,44 @@ export default function Post({ post }: PostProps) {
             );
           })}
         </article>
+
+        <div className={styles.divider} />
+
+        <div className={styles.commentForm}>
+          <div className={styles.othersPostsLinks}>
+            <div>
+              {previousPost && (
+                <>
+                  <p>{previousPost.data?.title}</p>
+                  <Link href={`/post/${previousPost.uid}`}>
+                    <a>Post anterior</a>
+                  </Link>
+                </>
+              )}
+            </div>
+
+            <div>
+              {nextPost && (
+                <>
+                  <p>{nextPost.data?.title}</p>
+                  <Link href={`/post/${nextPost.uid}`}>
+                    <a>Próximo post</a>
+                  </Link>
+                </>
+              )}
+            </div>
+          </div>
+
+          <UtterancesComments />
+
+          {preview && (
+            <div className={styles.outPreviewModeButton}>
+              <Link href="/api/exit-preview">
+                <a>Sair do modo Preview</a>
+              </Link>
+            </div>
+          )}
+        </div>
       </main>
     </>
   );
@@ -125,33 +194,52 @@ export const getStaticPaths: GetStaticPaths = async () => {
   };
 };
 
-export const getStaticProps: GetStaticProps = async context => {
+export const getStaticProps: GetStaticProps = async ({
+  preview = false,
+  previewData,
+  params,
+}) => {
   const prismic = getPrismicClient();
-  const { slug } = context.params;
-  const response = await prismic.getByUID('post', String(slug), {});
+  const { slug } = params;
 
-  const post = {
-    uid: response.uid,
-    first_publication_date: response.first_publication_date,
-    data: {
-      title: response.data.title,
-      subtitle: response.data.subtitle,
-      banner: {
-        url: response.data.banner.url,
-      },
-      author: response.data.author,
-      content: response.data.content.map(content => {
-        return {
-          heading: content.heading,
-          body: [...content.body],
-        };
-      }),
-    },
-  };
+  const post =
+    (await prismic.getByUID('post', String(slug), {
+      ref: previewData?.ref || null,
+    })) || ({} as Post);
+
+  const previousPostResponse = await prismic.query(
+    [Prismic.predicates.at('document.type', 'post')],
+    {
+      pageSize: 1,
+      after: `${post.id}`,
+      orderings: '[document.first_publication_date desc]',
+    }
+  );
+
+  const nextPostResponse = await prismic.query(
+    [Prismic.predicates.at('document.type', 'post')],
+    {
+      pageSize: 1,
+      after: `${post.id}`,
+      orderings: '[document.first_publication_date]',
+    }
+  );
+
+  const previousPost =
+    previousPostResponse.results.length > 0
+      ? previousPostResponse.results[0]
+      : null;
+
+  const nextPost =
+    nextPostResponse.results.length > 0 ? nextPostResponse.results[0] : null;
 
   return {
     props: {
       post,
+      previousPost,
+      nextPost,
+      preview,
     },
+    revalidate: 60 * 30, // time to generate new page (one time a day) (Only for SSG)
   };
 };

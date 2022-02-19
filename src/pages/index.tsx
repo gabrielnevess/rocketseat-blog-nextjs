@@ -7,14 +7,14 @@ import { FiCalendar, FiUser } from 'react-icons/fi';
 
 import Prismic from '@prismicio/client';
 
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { getPrismicClient } from '../services/prismic';
 
 import commonStyles from '../styles/common.module.scss';
 import styles from './home.module.scss';
 
 import Header from '../components/Header';
-
-import { formatDate } from '../utils';
 
 interface Post {
   uid?: string;
@@ -38,10 +38,18 @@ interface HomeProps {
 export default function Home({ postsPagination }: HomeProps): JSX.Element {
   const [nextPage, setNextPage] = useState<string>(postsPagination.next_page);
 
+  function dateFormat(date: string) {
+    const formatedDate = format(new Date(date), 'dd MMM yyyy', {
+      locale: ptBR,
+    });
+
+    return formatedDate;
+  }
+
   const formattedPosts = postsPagination.results.map(post => {
     return {
       ...post,
-      first_publication_date: formatDate(post.first_publication_date),
+      first_publication_date: dateFormat(post.first_publication_date),
     };
   });
 
@@ -57,7 +65,7 @@ export default function Home({ postsPagination }: HomeProps): JSX.Element {
     const newFormattedPosts = newPostsPagination.results.map(post => {
       return {
         ...post,
-        first_publication_date: formatDate(post.first_publication_date),
+        first_publication_date: dateFormat(post.first_publication_date),
       };
     });
 
@@ -107,7 +115,7 @@ export const getStaticProps: GetStaticProps = async () => {
   const postsResponse = await prismic.query(
     [Prismic.predicates.at('document.type', 'post')],
     {
-      pageSize: 1,
+      pageSize: 20,
     }
   );
 
